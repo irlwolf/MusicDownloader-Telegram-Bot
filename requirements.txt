@@ -24,3 +24,5 @@ lxml
 # Automation
 selenium
 webdriver_manager
+
+yt-dlp==2025.01.26
