@@ -411,9 +411,8 @@ class Bot:
             b"admin/broadcast/subs": lambda e: asyncio.create_task(Bot.handle_broadcast(e, send_to_subs=True)),
             b"admin/broadcast/specified": lambda e: asyncio.create_task(
                 Bot.handle_broadcast(e, send_to_specified=True)),
-            b"unavailable_feature": lambda e: asyncio.create_task(Bot.handle_unavailable_feature(e))
-            # Add other actions here
-        }
+            b"unavailable_feature": lambda e: asyncio.create_task(Bot.handle_unavailable_feature(e)) 
+                                                                        }
 
     @staticmethod
     async def change_music_quality(event, format, quality):
