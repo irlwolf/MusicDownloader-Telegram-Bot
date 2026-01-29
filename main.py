@@ -1,34 +1,31 @@
 import os
 import asyncio
 from aiohttp import web
-from run import Bot, BotState # Added BotState to access the client
+from run import Bot, BotState
 
-# 1. Define a tiny health check handler
 async def health_check(request):
     return web.Response(text="Bot is alive and healthy!", status=200)
 
 async def main():
-    # 2. Setup the Web Server for Koyeb Health Checks
+    # 1. Setup Web Server
     app = web.Application()
     app.router.add_get("/", health_check)
     runner = web.AppRunner(app)
     await runner.setup()
-    
-    # Get the port from Koyeb environment variables (defaults to 8000)
     port = int(os.environ.get("PORT", 8000))
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    
-    # Start the web server
+    await web.TCPSite(runner, "0.0.0.0", port).start()
     print(f"Starting health check server on port {port}...")
-    await site.start()
 
-    # 3. Initialize your Telegram Bot
+    # 2. Initialize Bot
     print("Initializing Telegram Bot...")
     await Bot.initialize()
     
-    # 4. Corrected Run Command
+    # 3. START the client (This fixes the ConnectionError)
+    print("Connecting to Telegram...")
+    await BotState.BOT_CLIENT.start(bot_token=BotState.BOT_TOKEN)
+    
+    # 4. Run until disconnected
     print("Bot is running. Press Ctrl+C to stop.")
-    # We use the client inside BotState to keep the loop alive
     await BotState.BOT_CLIENT.run_until_disconnected()
 
 if __name__ == "__main__":
