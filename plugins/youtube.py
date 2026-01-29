@@ -3,18 +3,19 @@ from utils import os, InputMediaUploadedDocument, DocumentAttributeVideo, fast_u
 from utils import DocumentAttributeAudio, DownloadError, WebpageMediaEmptyError
 from run import Button, Buttons
 
-
 class YoutubeDownloader:
 
     @classmethod
     def initialize(cls):
         cls.MAXIMUM_DOWNLOAD_SIZE_MB = 100
         cls.DOWNLOAD_DIR = 'repository/Youtube'
+        # Ensure the cookie file exists to prevent errors
+        cls.COOKIE_FILE = 'cookies.txt' 
 
         if not os.path.isdir(cls.DOWNLOAD_DIR):
             os.mkdir(cls.DOWNLOAD_DIR)
 
-    @lru_cache(maxsize=128)  # Cache the last 128 screenshots
+    @lru_cache(maxsize=128)
     def get_file_path(url, format_id, extension):
         url = url + format_id + extension
         url_hash = hashlib.blake2b(url.encode()).hexdigest()
@@ -39,7 +40,6 @@ class YoutubeDownloader:
 
     @staticmethod
     def extract_youtube_url(text):
-        # Regular expression patterns to match different types of YouTube URLs
         youtube_patterns = [
             r'(https?\:\/\/)?youtube\.com\/shorts\/([a-zA-Z0-9_-]{11}).*',
             r'(https?\:\/\/)?www\.youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})(?!.*list=)',
@@ -48,7 +48,6 @@ class YoutubeDownloader:
             r'(https?\:\/\/)?www\.youtube\.com\/v\/([a-zA-Z0-9_-]{11})(?!.*list=)',
             r'(https?\:\/\/)?www\.youtube\.com\/[^\/]+\?v=([a-zA-Z0-9_-]{11})(?!.*list=)',
         ]
-
         for pattern in youtube_patterns:
             match = re.search(pattern, text)
             if match:
@@ -57,7 +56,6 @@ class YoutubeDownloader:
                     return f'https://www.youtube.com/shorts/{video_id}'
                 else:
                     return f'https://www.youtube.com/watch?v={video_id}'
-
         return None
 
     @staticmethod
@@ -66,13 +64,11 @@ class YoutubeDownloader:
             'listformats': True,
             'no_warnings': True,
             'quiet': True,
+            'cookiefile': YoutubeDownloader.COOKIE_FILE, # Added cookies
         }
-
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
-
-        formats = info['formats']
-        return formats
+        return info['formats']
 
     @staticmethod
     async def send_youtube_info(client, event, youtube_link):
@@ -80,71 +76,73 @@ class YoutubeDownloader:
         video_id = (youtube_link.split("?si=")[0]
                     .replace("https://www.youtube.com/watch?v=", "")
                     .replace("https://www.youtube.com/shorts/", ""))
-        formats = YoutubeDownloader._get_formats(url)
-
-        # Download the video thumbnail
-        with YoutubeDL({'quiet': True}) as ydl:
-            info = ydl.extract_info(url, download=False)
-            thumbnail_url = info['thumbnail']
-
-        # Create buttons for each format
-        video_formats = [f for f in formats if f.get('vcodec') != 'none' and f.get('acodec') != 'none']
-        audio_formats = [f for f in formats if f.get('acodec') != 'none' and f.get('vcodec') == 'none']
-
-        video_buttons = []
-        counter = 0
-        for f in reversed(video_formats):
-            extension = f['ext']
-            resolution = f.get('resolution')
-            filesize = f.get('filesize') if f.get('filesize') is not None else f.get('filesize_approx')
-            if resolution and filesize and counter < 5:
-                filesize = f"{filesize / 1024 / 1024:.2f} MB"
-                button_data = f"yt/dl/{video_id}/{extension}/{f['format_id']}/{filesize}"
-                button = [Button.inline(f"{extension} - {resolution} - {filesize}", data=button_data)]
-                if not button in video_buttons:
-                    video_buttons.append(button)
-                    counter += 1
-
-        audio_buttons = []
-        counter = 0
-        for f in reversed(audio_formats):
-            extension = f['ext']
-            resolution = f.get('resolution')
-            filesize = f.get('filesize') if f.get('filesize') is not None else f.get('filesize_approx')
-            if resolution and filesize and counter < 5:
-                filesize = f"{filesize / 1024 / 1024:.2f}MB"
-                button_data = f"yt/dl/{video_id}/{extension}/{f['format_id']}/{filesize}"
-                button = [Button.inline(f"{extension} - {resolution} - {filesize}", data=button_data)]
-                if not button in audio_buttons:
-                    audio_buttons.append(button)
-                    counter += 1
-
-        buttons = video_buttons + audio_buttons
-        buttons.append(Buttons.cancel_button)
-
-        # Set thumbnail attributes
-        thumbnail = InputMediaPhotoExternal(thumbnail_url)
-        thumbnail.ttl_seconds = 0
-
-        # Send the thumbnail as a picture with format buttons
+        
         try:
+            # Combined format and thumbnail extraction to handle errors centrally
+            ydl_opts = {
+                'quiet': True, 
+                'no_warnings': True,
+                'cookiefile': YoutubeDownloader.COOKIE_FILE # Added cookies
+            }
+            with YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                formats = info['formats']
+                thumbnail_url = info['thumbnail']
+
+            # Create buttons for each format
+            video_formats = [f for f in formats if f.get('vcodec') != 'none' and f.get('acodec') != 'none']
+            audio_formats = [f for f in formats if f.get('acodec') != 'none' and f.get('vcodec') == 'none']
+
+            video_buttons = []
+            counter = 0
+            for f in reversed(video_formats):
+                extension = f['ext']
+                resolution = f.get('resolution')
+                filesize = f.get('filesize') if f.get('filesize') is not None else f.get('filesize_approx')
+                if resolution and filesize and counter < 5:
+                    filesize_str = f"{filesize / 1024 / 1024:.2f} MB"
+                    button_data = f"yt/dl/{video_id}/{extension}/{f['format_id']}/{filesize_str}"
+                    button = [Button.inline(f"{extension} - {resolution} - {filesize_str}", data=button_data)]
+                    if not button in video_buttons:
+                        video_buttons.append(button)
+                        counter += 1
+
+            audio_buttons = []
+            counter = 0
+            for f in reversed(audio_formats):
+                extension = f['ext']
+                resolution = f.get('resolution')
+                filesize = f.get('filesize') if f.get('filesize') is not None else f.get('filesize_approx')
+                if resolution and filesize and counter < 5:
+                    filesize_str = f"{filesize / 1024 / 1024:.2f}MB"
+                    button_data = f"yt/dl/{video_id}/{extension}/{f['format_id']}/{filesize_str}"
+                    button = [Button.inline(f"{extension} - {resolution} - {filesize_str}", data=button_data)]
+                    if not button in audio_buttons:
+                        audio_buttons.append(button)
+                        counter += 1
+
+            buttons = video_buttons + audio_buttons
+            buttons.append(Buttons.cancel_button)
+
+            thumbnail = InputMediaPhotoExternal(thumbnail_url)
+            thumbnail.ttl_seconds = 0
+
             await client.send_file(
                 event.chat_id,
-               file=thumbnail,
-               caption="Select a format to download:",
-               buttons=buttons
-               )
-        except WebpageMediaEmptyError:
-            await event.respond(
-               "Select a format to download:",
-               buttons=buttons
-               )
-
+                file=thumbnail,
+                caption="Select a format to download:",
+                buttons=buttons
+            )
+        except Exception as e:
+            error_msg = str(e)
+            if "Sign in to confirm" in error_msg:
+                await event.respond("⚠️ **YouTube Error:** Sign-in required. Please notify the Admin to update cookies.")
+            else:
+                await event.respond(f"Sorry, I couldn't get info for this video.\nError: {error_msg[:100]}")
 
     @staticmethod
     async def download_and_send_yt_file(client, event):
         user_id = event.sender_id
-
         if await db.get_file_processing_flag(user_id):
             return await event.respond("Sorry, There is already a file being processed for you.")
 
@@ -157,121 +155,55 @@ class YoutubeDownloader:
             video_id = parts[2]
 
             if float(filesize) > YoutubeDownloader.MAXIMUM_DOWNLOAD_SIZE_MB:
-                return await event.answer(
-                    f"⚠️ The file size is more than {YoutubeDownloader.MAXIMUM_DOWNLOAD_SIZE_MB}MB."
-                    , alert=True)
+                return await event.answer(f"⚠️ The file size is more than {YoutubeDownloader.MAXIMUM_DOWNLOAD_SIZE_MB}MB.", alert=True)
 
             await db.set_file_processing_flag(user_id, is_processing=True)
-
-            local_availability_message = None
             url = "https://www.youtube.com/watch?v=" + video_id
-
             path = YoutubeDownloader.get_file_path(url, format_id, extension)
 
-            if not os.path.isfile(path):
-                downloading_message = await event.respond("Downloading the file for you ...")
-                ydl_opts = {
-                    'format': format_id,
-                    'outtmpl': path,
-                    'quiet': True,
-                }
+            try:
+                if not os.path.isfile(path):
+                    downloading_message = await event.respond("Downloading the file for you ...")
+                    ydl_opts = {
+                        'format': format_id,
+                        'outtmpl': path,
+                        'quiet': True,
+                        'cookiefile': YoutubeDownloader.COOKIE_FILE # Added cookies
+                    }
 
-                with YoutubeDL(ydl_opts) as ydl:
-                    try:
+                    with YoutubeDL(ydl_opts) as ydl:
                         info = ydl.extract_info(url, download=True)
                         duration = info.get('duration', 0)
                         width = info.get('width', 0)
                         height = info.get('height', 0)
-                    except DownloadError as e:
-                        await db.set_file_processing_flag(user_id, is_processing=False)
-                        return await downloading_message.edit(f"Sorry Something went wrong:\nError:"
-                                                              f"  {str(e).split('Error')[-1]}")
-                await downloading_message.delete()
-            else:
-                local_availability_message = await event.respond(
-                    "This file is available locally. Preparing it for you now...")
-
-                ydl_opts = {
-                    'format': format_id,
-                    'outtmpl': path,
-                    'quiet': True,
-                }
-                with YoutubeDL(ydl_opts) as ydl:
-                    try:
+                    await downloading_message.delete()
+                else:
+                    local_availability_message = await event.respond("Preparing local file...")
+                    ydl_opts = {'quiet': True, 'cookiefile': YoutubeDownloader.COOKIE_FILE}
+                    with YoutubeDL(ydl_opts) as ydl:
                         info = ydl.extract_info(url, download=False)
                         duration = info.get('duration', 0)
                         width = info.get('width', 0)
                         height = info.get('height', 0)
-                    except DownloadError as e:
-                        await db.set_file_processing_flag(user_id, is_processing=False)
+                    await local_availability_message.delete()
 
-            upload_message = await event.respond("Uploading ... Please hold on.")
-
-            try:
-                # Indicate ongoing file upload to enhance user experience
+                upload_message = await event.respond("Uploading ... Please hold on.")
                 async with client.action(event.chat_id, 'document'):
-
-                    media = await fast_upload(
-                        client=client,
-                        file_location=path,
-                        reply=None,  # No need for a progress bar in this case
-                        name=path,
-                        progress_bar_function=None
-                    )
+                    media_file = await fast_upload(client=client, file_location=path, reply=None, name=path, progress_bar_function=None)
+                    uploaded_file = await client.upload_file(media_file)
 
                     if extension == "mp4":
+                        attr = DocumentAttributeVideo(duration=int(duration), w=int(width), h=int(height), supports_streaming=True)
+                        media = InputMediaUploadedDocument(file=uploaded_file, mime_type='video/mp4', attributes=[attr])
+                    else:
+                        attr = DocumentAttributeAudio(duration=int(duration), title="Downloaded Audio", performer="@YourBot")
+                        mime = 'audio/m4a' if extension == "m4a" else 'audio/webm'
+                        media = InputMediaUploadedDocument(file=uploaded_file, mime_type=mime, attributes=[attr])
 
-                        uploaded_file = await client.upload_file(media)
-
-                        # Prepare the video attributes
-                        video_attributes = DocumentAttributeVideo(
-                            duration=int(duration),
-                            w=int(width),
-                            h=int(height),
-                            supports_streaming=True,
-                            # Add other attributes as needed
-                        )
-
-                        media = InputMediaUploadedDocument(
-                            file=uploaded_file,
-                            thumb=None,
-                            mime_type='video/mp4',
-                            attributes=[video_attributes],
-                        )
-
-                    elif extension == "m4a" or extension == "webm":
-
-                        uploaded_file = await client.upload_file(media)
-
-                        # Prepare the audio attributes
-                        audio_attributes = DocumentAttributeAudio(
-                            duration=int(duration),
-                            title="Downloaded Audio",  # Replace with actual title
-                            performer="@Spotify_YT_Downloader_BOT",  # Replace with actual performer
-                            # Add other attributes as needed
-                        )
-
-                        media = InputMediaUploadedDocument(
-                            file=uploaded_file,
-                            thumb=None,  # Assuming you have a thumbnail or will set it later
-                            mime_type='audio/m4a' if extension == "m4a" else 'audio/webm',
-                            attributes=[audio_attributes],
-                        )
-
-                    # Send the downloaded file
-                    await client.send_file(event.chat_id, file=media,
-                                           caption=f"Enjoy!\n@Spotify_YT_Downloader_BOT",
-                                           force_document=False,
-                                           # This ensures the file is sent as a video/voice if possible
-                                           supports_streaming=True  # This enables video streaming
-                                           )
-
+                    await client.send_file(event.chat_id, file=media, caption=f"Enjoy!", supports_streaming=True)
                 await upload_message.delete()
-                await local_availability_message.delete() if local_availability_message else None
-                await db.set_file_processing_flag(user_id, is_processing=False)
 
             except Exception as Err:
+                await event.respond(f"Error processing request: {str(Err)[:100]}")
+            finally:
                 await db.set_file_processing_flag(user_id, is_processing=False)
-                return await event.respond(f"Sorry There was a problem with your request.\nReason:{str(Err)}")
-        else:
-            await event.answer("Invalid button data.")
