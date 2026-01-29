@@ -363,27 +363,23 @@ class Bot:
             await event.respond("Your input was not valid. Please try again with a valid search term.")
             return
 
-        search_result = await SpotifyDownloader.search_spotify_based_on_user_input(sanitized_query, limit=10)
-        button_list = Buttons.get_search_result_buttons(sanitized_query, search_result)
+        # Check if Spotify is initialized to avoid AttributeError
+        if not hasattr(SpotifyDownloader, 'spotify_account') or SpotifyDownloader.spotify_account is None:
+            await event.respond(
+                "⚠️ **Spotify API is currently on hold by Spotify.**\n\n"
+                "I cannot search Spotify right now. Please **paste a YouTube link directly** "
+                "to download your music!"
+            )
+            await waiting_message_search.delete()
+            return
 
+        # Original search logic (only runs if Spotify is working)
         try:
+            search_result = await SpotifyDownloader.search_spotify_based_on_user_input(sanitized_query, limit=10)
+            button_list = Buttons.get_search_result_buttons(sanitized_query, search_result)
             await event.respond(Bot.search_result_message, buttons=button_list)
         except Exception as Err:
-            await event.respond(f"Sorry There Was an Error Processing Your Request: {str(Err)}")
-
-        await waiting_message_search.delete()
-
-    @staticmethod
-    async def handle_next_prev_page(event):
-        query_data = str(event.data)
-        is_playlist = True if query_data.split("/")[1] == "p" else False
-        current_page = query_data.split("/page/")[-1][:-1]
-
-        search_query = query_data.split("/")[2]
-
-        if current_page == "0" or (current_page == "6" and is_playlist):
-            return await event.answer("⚠️ Not available.")
-
-        if is_playlist:
-            search_result = await SpotifyDownloader.get_playlist_tracks(search_query,
-                                                                        limit=int(current_page) * 10
+            # Handle cases where the search itself fails
+            await event.respond(f"Sorry, there was an error processing your search: {str(Err)}")
+        
+        await waiting_message_se
