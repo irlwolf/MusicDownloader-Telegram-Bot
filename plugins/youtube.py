@@ -2,6 +2,7 @@ from utils import YoutubeDL, re, lru_cache, hashlib, InputMediaPhotoExternal, db
 from utils import os, InputMediaUploadedDocument, DocumentAttributeVideo, fast_upload
 from utils import DocumentAttributeAudio, DownloadError, WebpageMediaEmptyError
 from run import Button, Buttons
+import asyncio
 
 class YoutubeDownloader:
 
@@ -9,8 +10,13 @@ class YoutubeDownloader:
     def initialize(cls):
         cls.MAXIMUM_DOWNLOAD_SIZE_MB = 100
         cls.DOWNLOAD_DIR = 'repository/Youtube'
-        # Ensure the cookie file is recognized from the root directory
         cls.COOKIE_FILE = 'cookies.txt' 
+
+        # --- Sanity Check for Koyeb Logs ---
+        if os.path.exists(cls.COOKIE_FILE):
+            print(f"✅ Found {cls.COOKIE_FILE} - Size: {os.path.getsize(cls.COOKIE_FILE)} bytes")
+        else:
+            print(f"❌ WARNING: {cls.COOKIE_FILE} NOT FOUND in {os.getcwd()}")
 
         if not os.path.isdir(cls.DOWNLOAD_DIR):
             os.makedirs(cls.DOWNLOAD_DIR, exist_ok=True)
@@ -74,7 +80,7 @@ class YoutubeDownloader:
             }
             
             with YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
+                info = await asyncio.to_thread(ydl.extract_info, url, download=False)
                 formats = info.get('formats', [])
                 thumbnail_url = info.get('thumbnail')
 
@@ -121,15 +127,15 @@ class YoutubeDownloader:
         except Exception as e:
             err = str(e)
             if "Sign in to confirm" in err:
-                await event.respond("⚠️ YouTube is blocking this request. Admin needs to refresh `cookies.txt`.")
+                await event.respond("⚠️ YouTube is blocking this request. Refresh `cookies.txt`.")
             else:
-                await event.respond(f"❌ Error fetching video info: {err[:100]}")
+                await event.respond(f"❌ Error fetching info: {err[:100]}")
 
     @staticmethod
     async def download_and_send_yt_file(client, event):
         user_id = event.sender_id
         if await db.get_file_processing_flag(user_id):
-            return await event.respond("⚠️ You already have a file being processed.")
+            return await event.respond("⚠️ Already processing a file.")
 
         try:
             data = event.data.decode('utf-8')
@@ -140,7 +146,7 @@ class YoutubeDownloader:
             size_mb = float(parts[5]) if parts[5] != "?" else 0
 
             if size_mb > YoutubeDownloader.MAXIMUM_DOWNLOAD_SIZE_MB:
-                return await event.answer(f"⚠️ Size limit {YoutubeDownloader.MAXIMUM_DOWNLOAD_SIZE_MB}MB exceeded.", alert=True)
+                return await event.answer(f"⚠️ Limit {YoutubeDownloader.MAXIMUM_DOWNLOAD_SIZE_MB}MB exceeded.", alert=True)
 
             await db.set_file_processing_flag(user_id, is_processing=True)
             url = f"https://www.youtube.com/watch?v={video_id}"
@@ -148,32 +154,35 @@ class YoutubeDownloader:
 
             if not os.path.isfile(path):
                 prog_msg = await event.respond("📥 Downloading...")
-                # FIX: Correct Indentation (16 spaces)
+                
+                # --- FIXED INDENTATION & FALLBACK LOGIC ---
                 ydl_opts = {
-                    'format': format_id,
+                    # Try the format_id, but fallback to best available if it fails
+                    'format': f'{format_id}/bestvideo+bestaudio/best',
                     'outtmpl': path,
                     'quiet': True,
+                    'no_warnings': True,
                     'cookiefile': YoutubeDownloader.COOKIE_FILE,
                     'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
                     'nocheckcertificate': True,
-                    'allow_unplayable_formats': True,
                 }
+                
                 with YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(url, download=True)
+                    info = await asyncio.to_thread(ydl.extract_info, url, download=True)
                     duration = info.get('duration', 0)
                     width = info.get('width', 0)
                     height = info.get('height', 0)
                 await prog_msg.delete()
             else:
-                await event.respond("📂 Found in local cache. Preparing...")
+                await event.respond("📂 Found in local cache...")
                 ydl_opts = {'quiet': True, 'cookiefile': YoutubeDownloader.COOKIE_FILE}
                 with YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(url, download=False)
+                    info = await asyncio.to_thread(ydl.extract_info, url, download=False)
                     duration = info.get('duration', 0)
                     width = info.get('width', 0)
                     height = info.get('height', 0)
 
-            upload_msg = await event.respond("📤 Uploading to Telegram...")
+            upload_msg = await event.respond("📤 Uploading...")
             async with client.action(event.chat_id, 'document'):
                 media_file = await fast_upload(client=client, file_location=path, reply=None, name=path, progress_bar_function=None)
                 uploaded_file = await client.upload_file(media_file)
@@ -186,10 +195,10 @@ class YoutubeDownloader:
                     mime = 'audio/m4a' if extension == "m4a" else 'audio/mpeg'
                     media = InputMediaUploadedDocument(file=uploaded_file, mime_type=mime, attributes=[attr])
 
-                await client.send_file(event.chat_id, file=media, caption="Done! Enjoy your music/video. 🎧", supports_streaming=True)
+                await client.send_file(event.chat_id, file=media, caption="Done! 🎧", supports_streaming=True)
             await upload_msg.delete()
 
         except Exception as Err:
-            await event.respond(f"❌ Failed to process: {str(Err)[:100]}")
+            await event.respond(f"❌ Error: {str(Err)[:100]}")
         finally:
             await db.set_file_processing_flag(user_id, is_processing=False)
