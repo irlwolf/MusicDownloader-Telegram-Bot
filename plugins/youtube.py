@@ -61,7 +61,6 @@ class YoutubeDownloader:
     @staticmethod
     async def send_youtube_info(client, event, youtube_link):
         url = youtube_link
-        # Extract Video ID cleanly
         video_id = (youtube_link.split("&")[0].split("?si=")[0]
                     .replace("https://www.youtube.com/watch?v=", "")
                     .replace("https://www.youtube.com/shorts/", "")
@@ -83,8 +82,6 @@ class YoutubeDownloader:
             audio_formats = [f for f in formats if f.get('acodec') != 'none' and f.get('vcodec') == 'none']
 
             all_buttons = []
-            
-            # Process Video Formats (Max 4)
             v_count = 0
             for f in reversed(video_formats):
                 if v_count >= 4: break
@@ -92,20 +89,16 @@ class YoutubeDownloader:
                 res = f.get('resolution') or f.get('format_note') or "Video"
                 size = f.get('filesize') or f.get('filesize_approx') or 0
                 size_mb = f"{size / 1024 / 1024:.1f}" if size > 0 else "?"
-                
-                # Data string must be under 64 chars
                 data = f"yt/dl/{video_id}/{ext}/{f['format_id']}/{size_mb}"
                 all_buttons.append([Button.inline(f"🎬 {ext} {res} ({size_mb}MB)", data=data)])
                 v_count += 1
 
-            # Process Audio Formats (Max 3)
             a_count = 0
             for f in reversed(audio_formats):
                 if a_count >= 3: break
                 ext = f['ext']
                 size = f.get('filesize') or f.get('filesize_approx') or 0
                 size_mb = f"{size / 1024 / 1024:.1f}" if size > 0 else "?"
-                
                 data = f"yt/dl/{video_id}/{ext}/{f['format_id']}/{size_mb}"
                 all_buttons.append([Button.inline(f"🎵 {ext} Audio ({size_mb}MB)", data=data)])
                 a_count += 1
@@ -141,7 +134,6 @@ class YoutubeDownloader:
         try:
             data = event.data.decode('utf-8')
             parts = data.split('/')
-            # Expected format: yt/dl/{video_id}/{ext}/{format_id}/{size_mb}
             video_id = parts[2]
             extension = parts[3]
             format_id = parts[4]
@@ -156,12 +148,12 @@ class YoutubeDownloader:
 
             if not os.path.isfile(path):
                 prog_msg = await event.respond("📥 Downloading...")
-             ydl_opts = {
+                # FIX: Correct Indentation (16 spaces)
+                ydl_opts = {
                     'format': format_id,
                     'outtmpl': path,
                     'quiet': True,
                     'cookiefile': YoutubeDownloader.COOKIE_FILE,
-                    # --- ADD THESE THREE LINES ---
                     'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
                     'nocheckcertificate': True,
                     'allow_unplayable_formats': True,
