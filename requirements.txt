@@ -1,18 +1,28 @@
 # Web server for Koyeb Health Checks
 aiohttp
 
-# Existing Bot Dependencies
-pillow
-yt-dlp
-python-dotenv
-spotipy
+# Bot Core & Telegram
 Telethon
+FastTelethonhelper
+
+# APIs & Scrapers
+yt-dlp>=2025.1.15
+spotipy
 spotdl
 shazamio
 lyricsgenius
+
+# Database & Async
 aiosqlite
+asyncio
+
+# Utils & Media
+pillow
+python-dotenv
 wget
-FastTelethonhelper
 lxml
-webdriver_manager
+hashlib
+
+# Automation (If still used by your plugins)
 selenium
+webdriver_manager
