@@ -1,3 +1,7 @@
+# Web server for Koyeb Health Checks
+aiohttp
+
+# Existing Bot Dependencies
 pillow
 yt-dlp
 python-dotenv
