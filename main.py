@@ -7,7 +7,7 @@ async def health_check(request):
     return web.Response(text="Bot is alive and healthy!", status=200)
 
 async def main():
-    # 1. Setup Web Server
+    # 1. Setup Web Server for Koyeb
     app = web.Application()
     app.router.add_get("/", health_check)
     runner = web.AppRunner(app)
@@ -16,16 +16,17 @@ async def main():
     await web.TCPSite(runner, "0.0.0.0", port).start()
     print(f"Starting health check server on port {port}...")
 
-    # 2. Initialize Bot
-    print("Initializing Telegram Bot...")
-    await Bot.initialize()
-    
-    # 3. START the client (This fixes the ConnectionError)
+    # 2. START and AUTHORIZE the client first
     print("Connecting to Telegram...")
+    # This ensures the 'phone line' is open before we tell the bot what to listen for
     await BotState.BOT_CLIENT.start(bot_token=BotState.BOT_TOKEN)
     
+    # 3. Initialize Bot Logic (Registering /start, etc.)
+    print("Initializing Telegram Bot Handlers...")
+    await Bot.initialize()
+    
     # 4. Run until disconnected
-    print("Bot is running. Press Ctrl+C to stop.")
+    print("Bot is running. Send /start in Telegram!")
     await BotState.BOT_CLIENT.run_until_disconnected()
 
 if __name__ == "__main__":
