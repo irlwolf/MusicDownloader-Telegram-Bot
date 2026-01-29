@@ -156,11 +156,15 @@ class YoutubeDownloader:
 
             if not os.path.isfile(path):
                 prog_msg = await event.respond("📥 Downloading...")
-                ydl_opts = {
+             ydl_opts = {
                     'format': format_id,
                     'outtmpl': path,
                     'quiet': True,
-                    'cookiefile': YoutubeDownloader.COOKIE_FILE
+                    'cookiefile': YoutubeDownloader.COOKIE_FILE,
+                    # --- ADD THESE THREE LINES ---
+                    'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
+                    'nocheckcertificate': True,
+                    'allow_unplayable_formats': True,
                 }
                 with YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(url, download=True)
