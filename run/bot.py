@@ -75,7 +75,6 @@ class Bot:
 
     @classmethod
     def initialize_messages(cls):
-        # Initialize messages here
         cls.start_message = BotMessageHandler.start_message
         cls.instruction_message = BotMessageHandler.instruction_message
         cls.search_result_message = BotMessageHandler.search_result_message
@@ -85,7 +84,6 @@ class Bot:
 
     @classmethod
     def initialize_buttons(cls):
-        # Initialize buttons here
         cls.main_menu_buttons = Buttons.main_menu_buttons
         cls.back_button = Buttons.back_button
         cls.setting_button = Buttons.setting_button
@@ -104,10 +102,13 @@ class Bot:
             b"back": lambda e: asyncio.create_task(
                 BotMessageHandler.edit_message(e, f"Hey {e.sender.first_name}!👋\n {Bot.start_message}",
                                                buttons=Bot.main_menu_buttons)),
-            b"setting": lambda e: asyncio.create_task(
-                BotMessageHandler.edit_message(e, "Settings :", buttons=Bot.setting_button)),
-            b"setting/back": lambda e: asyncio.create_task(
-                BotMessageHandler.edit_message(e, "Settings :", buttons=Bot.setting_button)),
+            
+            # --- ADMIN ONLY GATE APPLIED HERE ---
+            b"setting": lambda e: asyncio.create_task(Bot.admin_only_gate(e, 
+                BotMessageHandler.edit_message(e, "Settings :", buttons=Bot.setting_button))),
+            b"setting/back": lambda e: asyncio.create_task(Bot.admin_only_gate(e,
+                BotMessageHandler.edit_message(e, "Settings :", buttons=Bot.setting_button))),
+            
             b"setting/quality": lambda e: asyncio.create_task(BotMessageHandler.edit_quality_setting_message(e)),
             b"setting/quality/mp3/320": lambda e: asyncio.create_task(Bot.change_music_quality(e, "mp3", "320")),
             b"setting/quality/mp3/128": lambda e: asyncio.create_task(Bot.change_music_quality(e, "mp3", "128")),
@@ -127,17 +128,26 @@ class Bot:
             b"setting/TweetCapture/mode/1": lambda e: asyncio.create_task(Bot.change_tweet_capture_night_mode(e, "1")),
             b"setting/TweetCapture/mode/2": lambda e: asyncio.create_task(Bot.change_tweet_capture_night_mode(e, "2")),
             b"cancel": lambda e: e.delete(),
+            
+            # --- ADMIN ONLY BROADCASTS ---
             b"admin/cancel_broadcast": lambda e: asyncio.create_task(BotState.set_admin_broadcast(e.sender_id, False)),
-            b"admin/stats": lambda e: asyncio.create_task(BotCommandHandler.handle_stats_command(e)),
-            b"admin/broadcast": lambda e: asyncio.create_task(
-                BotMessageHandler.edit_message(e, "BroadCast Options: ", buttons=Bot.broadcast_options_buttons)),
+            b"admin/stats": lambda e: asyncio.create_task(Bot.admin_only_gate(e, BotCommandHandler.handle_stats_command(e))),
+            b"admin/broadcast": lambda e: asyncio.create_task(Bot.admin_only_gate(e, 
+                BotMessageHandler.edit_message(e, "BroadCast Options: ", buttons=Bot.broadcast_options_buttons))),
             b"admin/broadcast/all": lambda e: asyncio.create_task(Bot.handle_broadcast(e, send_to_all=True)),
             b"admin/broadcast/subs": lambda e: asyncio.create_task(Bot.handle_broadcast(e, send_to_subs=True)),
             b"admin/broadcast/specified": lambda e: asyncio.create_task(
                 Bot.handle_broadcast(e, send_to_specified=True)),
             b"unavailable_feature": lambda e: asyncio.create_task(Bot.handle_unavailable_feature(e))
-            # Add other actions here
         }
+
+    @staticmethod
+    async def admin_only_gate(event, follow_up_coroutine):
+        """Helper to ensure only admins can click certain buttons"""
+        if event.sender_id in BotState.ADMIN_USER_IDS:
+            return await follow_up_coroutine
+        else:
+            return await event.answer("⚠️ This menu is restricted to Admins only.", alert=True)
 
     @staticmethod
     async def change_music_quality(event, format, quality):
@@ -194,6 +204,13 @@ class Bot:
     async def process_bot_interaction(event) -> bool:
         user_id = event.sender_id
         await update_bot_version_user_season(event)
+
+        # --- WELCOME MESSAGE LOGIC ---
+        if hasattr(event, 'message') and event.message.text == '/start':
+            await event.respond(f"Hey {event.sender.first_name}!👋\nWelcome to your Music Downloader! 🎧\n\n{Bot.start_message}", 
+                                buttons=Bot.main_menu_buttons)
+            return False
+
         if not await db.get_user_updated_flag(user_id):
             return False
 
@@ -212,7 +229,6 @@ class Bot:
     @staticmethod
     async def handle_broadcast(e, send_to_all: bool = False, send_to_subs: bool = False,
                                send_to_specified: bool = False):
-
         user_id = e.sender_id
         if user_id not in BotState.ADMIN_USER_IDS:
             return
@@ -223,15 +239,12 @@ class Bot:
         await BotState.set_admin_broadcast(user_id, True)
         if send_to_all:
             await BroadcastManager.add_all_users_to_temp()
-
         elif send_to_specified:
             await BroadcastManager.remove_all_users_from_temp()
             time = 60
             time_to_send = await e.respond("Please enter the user_ids (comma-separated) within the next 60 seconds.",
                                            buttons=Bot.cancel_broadcast_button)
-
             for remaining_time in range(time - 1, 0, -1):
-                # Edit the message to show the new time
                 await time_to_send.edit(f"You've Got {remaining_time} seconds to send the user ids seperated with:")
                 if await BotState.get_admin_broadcast(user_id):
                     await time_to_send.edit("BroadCast Cancelled by User.", buttons=None)
@@ -247,8 +260,8 @@ class Bot:
                 parts = await BotState.get_admin_message_to_send(user_id)
                 parts = parts.message.replace(" ", "").split(",")
                 user_ids = [int(part) for part in parts]
-                for user_id in user_ids:
-                    await BroadcastManager.add_user_to_temp(user_id)
+                for u_id in user_ids:
+                    await BroadcastManager.add_user_to_temp(u_id)
             except:
                 await time_to_send.edit("Invalid command format. Use user_id1,user_id2,...")
                 await BotState.set_admin_message_to_send(user_id, None)
@@ -259,9 +272,7 @@ class Bot:
         time = 60
         time_to_send = await e.respond(f"You've Got {time} seconds to send your message",
                                        buttons=Bot.cancel_broadcast_button)
-
         for remaining_time in range(time - 1, 0, -1):
-            # Edit the message to show the new time
             await time_to_send.edit(f"You've Got {remaining_time} seconds to send your message")
             if not await BotState.get_admin_broadcast(user_id):
                 await time_to_send.edit("BroadCast Cancelled by User.", buttons=None)
@@ -279,23 +290,16 @@ class Bot:
 
         try:
             if await BotState.get_admin_broadcast(user_id) and send_to_specified:
-                await BroadcastManager.broadcast_message_to_temp_members(Bot.Client,
-                                                                         await BotState.get_admin_message_to_send(
-                                                                             user_id))
+                await BroadcastManager.broadcast_message_to_temp_members(Bot.Client, await BotState.get_admin_message_to_send(user_id))
                 await e.respond("Broadcast initiated.")
             elif await BotState.get_admin_broadcast(user_id) and send_to_subs:
-                await BroadcastManager.broadcast_message_to_sub_members(Bot.Client,
-                                                                        await BotState.get_admin_message_to_send(
-                                                                            user_id),
-                                                                        Buttons.cancel_subscription_button_quite)
+                await BroadcastManager.broadcast_message_to_sub_members(Bot.Client, await BotState.get_admin_message_to_send(user_id), Buttons.cancel_subscription_button_quite)
                 await e.respond("Broadcast initiated.")
             elif await BotState.get_admin_broadcast(user_id) and send_to_all:
-                await BroadcastManager.broadcast_message_to_temp_members(Bot.Client,
-                                                                         await BotState.get_admin_message_to_send(
-                                                                             user_id))
+                await BroadcastManager.broadcast_message_to_temp_members(Bot.Client, await BotState.get_admin_message_to_send(user_id))
                 await e.respond("Broadcast initiated.")
-        except Exception as e:
-            await e.respond(f"Broadcast Failed: {str(e)}")
+        except Exception as err:
+            await e.respond(f"Broadcast Failed: {str(err)}")
             await BotState.set_admin_broadcast(user_id, False)
             await BotState.set_admin_message_to_send(user_id, None)
             await BroadcastManager.remove_all_users_from_temp()
@@ -308,10 +312,8 @@ class Bot:
     async def process_audio_file(event, user_id):
         if not await Bot.process_bot_interaction(event):
             return
-
         waiting_message_search = await event.respond('⏳')
         process_file_message = await event.respond("Processing Your File ...")
-
         file_path = await event.message.download_media(file=f"{ShazamHelper.voice_repository_dir}")
         shazam_recognized = await ShazamHelper.recognize(file_path)
         if not shazam_recognized:
@@ -319,21 +321,25 @@ class Bot:
             await process_file_message.delete()
             await event.respond("Sorry I Couldnt find any song that matches your Voice.")
             return
-
         sanitized_query = await sanitize_query(shazam_recognized)
         if not sanitized_query:
             await waiting_message_search.delete()
             await event.respond("Sorry I Couldnt find any song that matches your Voice.")
             return
+        
+        # Spotify Guard
+        if not hasattr(SpotifyDownloader, 'spotify_account') or SpotifyDownloader.spotify_account is None:
+            await event.respond(f"✅ Recognized: **{shazam_recognized}**\n\n⚠️ Spotify search is on hold. Use YouTube link!")
+            await process_file_message.delete()
+            await waiting_message_search.delete()
+            return
 
         search_result = await SpotifyDownloader.search_spotify_based_on_user_input(sanitized_query, limit=10)
         button_list = Buttons.get_search_result_buttons(sanitized_query, search_result)
-
         try:
             await event.respond(Bot.search_result_message, buttons=button_list)
         except Exception as Err:
             await event.respond(f"Sorry There Was an Error Processing Your Request: {str(Err)}")
-
         await process_file_message.delete()
         await waiting_message_search.delete()
 
@@ -341,11 +347,13 @@ class Bot:
     async def process_spotify_link(event):
         if not await Bot.process_bot_interaction(event):
             return
+        
+        if not hasattr(SpotifyDownloader, 'spotify_account') or SpotifyDownloader.spotify_account is None:
+            return await event.respond("⚠️ Spotify API restricted. Please use YouTube links!")
 
         waiting_message = await event.respond('⏳')
         info_tuple = await SpotifyDownloader.download_and_send_spotify_info(event, is_query=False)
-
-        if not info_tuple:  # if getting info of the link failed
+        if not info_tuple:
             await waiting_message.delete()
             return await event.respond("Sorry, There was a problem processing your request.")
 
@@ -353,24 +361,27 @@ class Bot:
     async def process_text_query(event):
         if not await Bot.process_bot_interaction(event):
             return
-
         if len(event.message.text) > 33:
             return await event.respond("Your Search Query is too long. :(")
-
         waiting_message_search = await event.respond('⏳')
         sanitized_query = await sanitize_query(event.message.text)
         if not sanitized_query:
             await event.respond("Your input was not valid. Please try again with a valid search term.")
+            await waiting_message_search.delete()
+            return
+        
+        # Spotify Guard
+        if not hasattr(SpotifyDownloader, 'spotify_account') or SpotifyDownloader.spotify_account is None:
+            await event.respond("⚠️ Spotify search is on hold. Paste a YouTube link directly!")
+            await waiting_message_search.delete()
             return
 
-        search_result = await SpotifyDownloader.search_spotify_based_on_user_input(sanitized_query, limit=10)
-        button_list = Buttons.get_search_result_buttons(sanitized_query, search_result)
-
         try:
+            search_result = await SpotifyDownloader.search_spotify_based_on_user_input(sanitized_query, limit=10)
+            button_list = Buttons.get_search_result_buttons(sanitized_query, search_result)
             await event.respond(Bot.search_result_message, buttons=button_list)
         except Exception as Err:
             await event.respond(f"Sorry There Was an Error Processing Your Request: {str(Err)}")
-
         await waiting_message_search.delete()
 
     @staticmethod
@@ -378,21 +389,15 @@ class Bot:
         query_data = str(event.data)
         is_playlist = True if query_data.split("/")[1] == "p" else False
         current_page = query_data.split("/page/")[-1][:-1]
-
         search_query = query_data.split("/")[2]
-
         if current_page == "0" or (current_page == "6" and is_playlist):
             return await event.answer("⚠️ Not available.")
-
         if is_playlist:
-            search_result = await SpotifyDownloader.get_playlist_tracks(search_query,
-                                                                        limit=int(current_page) * 10)
+            search_result = await SpotifyDownloader.get_playlist_tracks(search_query, limit=int(current_page) * 10)
             button_list = Buttons.get_playlist_search_buttons(search_query, search_result, page=int(current_page))
         else:
-            search_result = await SpotifyDownloader.search_spotify_based_on_user_input(search_query,
-                                                                                       limit=int(current_page) * 10)
+            search_result = await SpotifyDownloader.search_spotify_based_on_user_input(search_query, limit=int(current_page) * 10)
             button_list = Buttons.get_search_result_buttons(search_query, search_result, page=int(current_page))
-
         try:
             await event.edit(buttons=button_list)
         except:
@@ -402,7 +407,6 @@ class Bot:
     async def process_x_or_twitter_link(event):
         if not await Bot.process_bot_interaction(event):
             return
-
         x_link = X.find_and_return_x_or_twitter_link(event.message.text)
         if x_link:
             return await X.send_screenshot(Bot.Client, event, x_link)
@@ -411,9 +415,7 @@ class Bot:
     async def process_youtube_link(event):
         if not await Bot.process_bot_interaction(event):
             return
-
         waiting_message = await event.respond('⏳')
-
         youtube_link = YoutubeDownloader.extract_youtube_url(event.message.text)
         if not youtube_link:
             return await event.respond("Sorry, Bad Youtube Link.")
@@ -426,19 +428,15 @@ class Bot:
 
     @staticmethod
     async def search_inside_playlist(event):
-
         query_data = str(event.data)
         playlist_id = query_data.split("/playlist/")[-1][:-1]
-
         waiting_message_search = await event.respond('⏳')
         search_result = await SpotifyDownloader.get_playlist_tracks(playlist_id)
         button_list = Buttons.get_playlist_search_buttons(playlist_id, search_result)
-
         try:
             await event.respond(Bot.search_result_message, buttons=button_list)
         except Exception as Err:
             await event.respond(f"Sorry There Was an Error Processing Your Request: {str(Err)}")
-
         await asyncio.sleep(1.5)
         await waiting_message_search.delete()
 
@@ -454,13 +452,10 @@ class Bot:
             "spotify/dl/music/": SpotifyDownloader.download_spotify_file_and_send,
             "spotify/info/": SpotifyDownloader.download_and_send_spotify_info,
         }
-
         for key, handler in handlers.items():
             if event.data.startswith(key.encode()):
                 await handler(event)
                 break
-        else:
-            pass
 
     @staticmethod
     async def handle_youtube_callback(client, event):
@@ -471,8 +466,6 @@ class Bot:
     async def handle_x_callback(client, event):
         if event.data.startswith(b"X/dl"):
             await X.download(client, event)
-        else:
-            pass  # Add another x callbacks here
 
     @staticmethod
     async def callback_query_handler(event):
@@ -480,7 +473,6 @@ class Bot:
         await update_bot_version_user_season(event)
         if not await db.get_user_updated_flag(user_id):
             return
-
         action = Bot.button_actions.get(event.data)
         if action:
             await action(event)
@@ -492,13 +484,10 @@ class Bot:
             await Bot.handle_x_callback(Bot.Client, event)
         elif event.data.startswith(b"next_page") or event.data.startswith(b"prev_page"):
             await Bot.handle_next_prev_page(event)
-        else:
-            pass
 
     @staticmethod
     async def handle_message(event):
         user_id = event.sender_id
-
         if isinstance(event.message.media, MessageMediaDocument):
             if event.message.media.voice:
                 await Bot.process_audio_file(event, user_id)
@@ -518,21 +507,12 @@ class Bot:
     @staticmethod
     async def run():
         Bot.Client = await BotState.BOT_CLIENT.start(bot_token=BotState.BOT_TOKEN)
-
         # Register event handlers
         Bot.Client.add_event_handler(BotCommandHandler.start, events.NewMessage(pattern='/start'))
-
-        Bot.Client.add_event_handler(BotCommandHandler.handle_broadcast_command,
-                                     events.NewMessage(pattern='/broadcast'))
-
+        Bot.Client.add_event_handler(BotCommandHandler.handle_broadcast_command, events.NewMessage(pattern='/broadcast'))
         Bot.Client.add_event_handler(BotCommandHandler.handle_settings_command, events.NewMessage(pattern='/settings'))
-
-        Bot.Client.add_event_handler(BotCommandHandler.handle_subscribe_command,
-                                     events.NewMessage(pattern='/subscribe'))
-
-        Bot.Client.add_event_handler(BotCommandHandler.handle_unsubscribe_command,
-                                     events.NewMessage(pattern='/unsubscribe'))
-
+        Bot.Client.add_event_handler(BotCommandHandler.handle_subscribe_command, events.NewMessage(pattern='/subscribe'))
+        Bot.Client.add_event_handler(BotCommandHandler.handle_unsubscribe_command, events.NewMessage(pattern='/unsubscribe'))
         Bot.Client.add_event_handler(BotCommandHandler.handle_help_command, events.NewMessage(pattern='/help'))
         Bot.Client.add_event_handler(BotCommandHandler.handle_quality_command, events.NewMessage(pattern='/quality'))
         Bot.Client.add_event_handler(BotCommandHandler.handle_core_command, events.NewMessage(pattern='/core'))
@@ -540,11 +520,7 @@ class Bot:
         Bot.Client.add_event_handler(BotCommandHandler.handle_stats_command, events.NewMessage(pattern='/stats'))
         Bot.Client.add_event_handler(BotCommandHandler.handle_ping_command, events.NewMessage(pattern='/ping'))
         Bot.Client.add_event_handler(BotCommandHandler.handle_search_command, events.NewMessage(pattern='/search'))
-
-        Bot.Client.add_event_handler(BotCommandHandler.handle_user_info_command,
-                                     events.NewMessage(pattern='/user_info'))
-
+        Bot.Client.add_event_handler(BotCommandHandler.handle_user_info_command, events.NewMessage(pattern='/user_info'))
         Bot.Client.add_event_handler(Bot.callback_query_handler, events.CallbackQuery)
         Bot.Client.add_event_handler(Bot.handle_message, events.NewMessage)
-
         await Bot.Client.run_until_disconnected()
