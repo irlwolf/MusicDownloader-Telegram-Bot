@@ -1,36 +1,28 @@
 import os
 import asyncio
 from aiohttp import web
-from run import Bot, BotState
+from run import Bot
 
+# Handler for Koyeb's "ping"
 async def health_check(request):
-    return web.Response(text="Bot is alive and healthy!", status=200)
+    return web.Response(text="Bot is online", status=200)
 
 async def main():
-    # 1. Setup Web Server for Koyeb
+    # Setup the internal server
     app = web.Application()
     app.router.add_get("/", health_check)
     runner = web.AppRunner(app)
     await runner.setup()
+    
+    # Use the port Koyeb expects (8000)
     port = int(os.environ.get("PORT", 8000))
-    await web.TCPSite(runner, "0.0.0.0", port).start()
-    print(f"Starting health check server on port {port}...")
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    print(f"Health check server active on port {port}")
 
-    # 2. START and AUTHORIZE the client first
-    print("Connecting to Telegram...")
-    # This ensures the 'phone line' is open before we tell the bot what to listen for
-    await BotState.BOT_CLIENT.start(bot_token=BotState.BOT_TOKEN)
-    
-    # 3. Initialize Bot Logic (Registering /start, etc.)
-    print("Initializing Telegram Bot Handlers...")
+    # Start the actual bot
     await Bot.initialize()
-    
-    # 4. Run until disconnected
-    print("Bot is running. Send /start in Telegram!")
-    await BotState.BOT_CLIENT.run_until_disconnected()
+    await Bot.run()
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        pass
+    asyncio.run(main())
