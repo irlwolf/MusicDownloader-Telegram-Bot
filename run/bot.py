@@ -387,6 +387,7 @@ class Bot:
         if is_playlist:
             search_result = await SpotifyDownloader.get_playlist_tracks(search_query,
                                                                         limit=int(current_page) * 10 )
+            {
             b"setting/quality/mp3/128": lambda e: asyncio.create_task(Bot.change_music_quality(e, "mp3", "128")),
             b"setting/quality/flac": lambda e: asyncio.create_task(Bot.change_music_quality(e, "flac", "693")),
             b"setting/core": lambda e: asyncio.create_task(BotMessageHandler.edit_core_setting_message(e)),
