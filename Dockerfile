@@ -1,23 +1,23 @@
-# Use Python 3.11+ to support the 'Self' type hint in lyricsgenius
+# 1. Use Python 3.11-slim as the base
 FROM python:3.11-slim
 
-# Install system dependencies (FFmpeg is required for this bot)
+# 2. Install system dependencies
+# We added nodejs here to solve YouTube signature challenges
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     git \
+    nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# Set the working directory
+# 3. Set the working directory
 WORKDIR /app
 
-# Copy requirements and install them
+# 4. Copy requirements and install them
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application code
+# 5. Copy the rest of the application code
 COPY . .
 
-# Start the bot
+# 6. Start the bot (This MUST be the very last line)
 CMD ["python3", "main.py"]
-
-RUN apt-get update && apt-get install -y phantomjs nodejs
