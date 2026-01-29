@@ -19,3 +19,5 @@ COPY . .
 
 # Start the bot
 CMD ["python3", "main.py"]
+
+RUN apt-get update && apt-get install -y phantomjs nodejs
