@@ -363,26 +363,16 @@ class Bot:
             await event.respond("Your input was not valid. Please try again with a valid search term.")
             return
 
-        # Check if Spotify is initialized to avoid AttributeError
-        if not hasattr(SpotifyDownloader, 'spotify_account') or SpotifyDownloader.spotify_account is None:
-            await event.respond(
-                "⚠️ **Spotify API is currently on hold by Spotify.**\n\n"
-                "I cannot search Spotify right now. Please **paste a YouTube link directly** "
-                "to download your music!"
-            )
-            await waiting_message_search.delete()
-            return
+        search_result = await SpotifyDownloader.search_spotify_based_on_user_input(sanitized_query, limit=10)
+        button_list = Buttons.get_search_result_buttons(sanitized_query, search_result)
 
-        # Original search logic (only runs if Spotify is working)
         try:
-            search_result = await SpotifyDownloader.search_spotify_based_on_user_input(sanitized_query, limit=10)
-            button_list = Buttons.get_search_result_buttons(sanitized_query, search_result)
             await event.respond(Bot.search_result_message, buttons=button_list)
         except Exception as Err:
-            # Handle cases where the search itself fails
-            await event.respond(f"Sorry, there was an error processing your search: {str(Err)}")
-        
+            await event.respond(f"Sorry There Was an Error Processing Your Request: {str(Err)}")
+
         await waiting_message_search.delete()
+
     @staticmethod
     async def handle_next_prev_page(event):
         query_data = str(event.data)
@@ -396,165 +386,4 @@ class Bot:
 
         if is_playlist:
             search_result = await SpotifyDownloader.get_playlist_tracks(search_query,
-                                                                        limit=int(current_page) * 10)
-            button_list = Buttons.get_playlist_search_buttons(search_query, search_result, page=int(current_page))
-        else:
-            search_result = await SpotifyDownloader.search_spotify_based_on_user_input(search_query,
-                                                                                       limit=int(current_page) * 10)
-            button_list = Buttons.get_search_result_buttons(search_query, search_result, page=int(current_page))
-
-        try:
-            await event.edit(buttons=button_list)
-        except:
-            await event.answer("⚠️ Not available.")
-
-    @staticmethod
-    async def process_x_or_twitter_link(event):
-        if not await Bot.process_bot_interaction(event):
-            return
-
-        x_link = X.find_and_return_x_or_twitter_link(event.message.text)
-        if x_link:
-            return await X.send_screenshot(Bot.Client, event, x_link)
-
-    @staticmethod
-    async def process_youtube_link(event):
-        if not await Bot.process_bot_interaction(event):
-            return
-
-        waiting_message = await event.respond('⏳')
-
-        youtube_link = YoutubeDownloader.extract_youtube_url(event.message.text)
-        if not youtube_link:
-            return await event.respond("Sorry, Bad Youtube Link.")
-        await YoutubeDownloader.send_youtube_info(Bot.Client, event, youtube_link)
-        await waiting_message.delete()
-
-    @staticmethod
-    async def handle_unavailable_feature(event):
-        await event.answer("not available", alert=True)
-
-    @staticmethod
-    async def search_inside_playlist(event):
-
-        query_data = str(event.data)
-        playlist_id = query_data.split("/playlist/")[-1][:-1]
-
-        waiting_message_search = await event.respond('⏳')
-        search_result = await SpotifyDownloader.get_playlist_tracks(playlist_id)
-        button_list = Buttons.get_playlist_search_buttons(playlist_id, search_result)
-
-        try:
-            await event.respond(Bot.search_result_message, buttons=button_list)
-        except Exception as Err:
-            await event.respond(f"Sorry There Was an Error Processing Your Request: {str(Err)}")
-
-        await asyncio.sleep(1.5)
-        await waiting_message_search.delete()
-
-    @staticmethod
-    async def handle_spotify_callback(event):
-        handlers = {
-            "spotify/dl/icon/": SpotifyDownloader.send_music_icon,
-            "spotify/dl/30s_preview": SpotifyDownloader.send_30s_preview,
-            "spotify/artist/": SpotifyDownloader.send_artists_info,
-            "spotify/lyrics": SpotifyDownloader.send_music_lyrics,
-            "spotify/dl/playlist/": SpotifyDownloader.download_spotify_file_and_send,
-            "spotify/s/playlist/": Bot.search_inside_playlist,
-            "spotify/dl/music/": SpotifyDownloader.download_spotify_file_and_send,
-            "spotify/info/": SpotifyDownloader.download_and_send_spotify_info,
-        }
-
-        for key, handler in handlers.items():
-            if event.data.startswith(key.encode()):
-                await handler(event)
-                break
-        else:
-            pass
-
-    @staticmethod
-    async def handle_youtube_callback(client, event):
-        if event.data.startswith(b"yt/dl/"):
-            await YoutubeDownloader.download_and_send_yt_file(client, event)
-
-    @staticmethod
-    async def handle_x_callback(client, event):
-        if event.data.startswith(b"X/dl"):
-            await X.download(client, event)
-        else:
-            pass  # Add another x callbacks here
-
-    @staticmethod
-    async def callback_query_handler(event):
-        user_id = event.sender_id
-        await update_bot_version_user_season(event)
-        if not await db.get_user_updated_flag(user_id):
-            return
-
-        action = Bot.button_actions.get(event.data)
-        if action:
-            await action(event)
-        elif event.data.startswith(b"spotify"):
-            await Bot.handle_spotify_callback(event)
-        elif event.data.startswith(b"yt"):
-            await Bot.handle_youtube_callback(Bot.Client, event)
-        elif event.data.startswith(b"X"):
-            await Bot.handle_x_callback(Bot.Client, event)
-        elif event.data.startswith(b"next_page") or event.data.startswith(b"prev_page"):
-            await Bot.handle_next_prev_page(event)
-        else:
-            pass
-
-    @staticmethod
-    async def handle_message(event):
-        user_id = event.sender_id
-
-        if isinstance(event.message.media, MessageMediaDocument):
-            if event.message.media.voice:
-                await Bot.process_audio_file(event, user_id)
-            else:
-                await event.respond("Sorry, I can only process:\n-Text\n-Voice\n-Link")
-        elif YoutubeDownloader.is_youtube_link(event.message.text):
-            await Bot.process_youtube_link(event)
-        elif SpotifyDownloader.is_spotify_link(event.message.text):
-            await Bot.process_spotify_link(event)
-        elif X.contains_x_or_twitter_link(event.message.text):
-            await Bot.process_x_or_twitter_link(event)
-        elif Insta.is_instagram_url(event.message.text):
-            await Insta.download(Bot.Client, event)
-        elif not event.message.text.startswith('/'):
-            await Bot.process_text_query(event)
-
-    @staticmethod
-    async def run():
-        Bot.Client = await BotState.BOT_CLIENT.start(bot_token=BotState.BOT_TOKEN)
-
-        # Register event handlers
-        Bot.Client.add_event_handler(BotCommandHandler.start, events.NewMessage(pattern='/start'))
-
-        Bot.Client.add_event_handler(BotCommandHandler.handle_broadcast_command,
-                                     events.NewMessage(pattern='/broadcast'))
-
-        Bot.Client.add_event_handler(BotCommandHandler.handle_settings_command, events.NewMessage(pattern='/settings'))
-
-        Bot.Client.add_event_handler(BotCommandHandler.handle_subscribe_command,
-                                     events.NewMessage(pattern='/subscribe'))
-
-        Bot.Client.add_event_handler(BotCommandHandler.handle_unsubscribe_command,
-                                     events.NewMessage(pattern='/unsubscribe'))
-
-        Bot.Client.add_event_handler(BotCommandHandler.handle_help_command, events.NewMessage(pattern='/help'))
-        Bot.Client.add_event_handler(BotCommandHandler.handle_quality_command, events.NewMessage(pattern='/quality'))
-        Bot.Client.add_event_handler(BotCommandHandler.handle_core_command, events.NewMessage(pattern='/core'))
-        Bot.Client.add_event_handler(BotCommandHandler.handle_admin_command, events.NewMessage(pattern='/admin'))
-        Bot.Client.add_event_handler(BotCommandHandler.handle_stats_command, events.NewMessage(pattern='/stats'))
-        Bot.Client.add_event_handler(BotCommandHandler.handle_ping_command, events.NewMessage(pattern='/ping'))
-        Bot.Client.add_event_handler(BotCommandHandler.handle_search_command, events.NewMessage(pattern='/search'))
-
-        Bot.Client.add_event_handler(BotCommandHandler.handle_user_info_command,
-                                     events.NewMessage(pattern='/user_info'))
-
-        Bot.Client.add_event_handler(Bot.callback_query_handler, events.CallbackQuery)
-        Bot.Client.add_event_handler(Bot.handle_message, events.NewMessage)
-
-        await Bot.Client.run_until_disconnected()
+                                                                        limit=int(current_page) * 10
