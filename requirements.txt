@@ -12,17 +12,15 @@ spotdl
 shazamio
 lyricsgenius
 
-# Database & Async
+# Database & Async (aiosqlite is needed, but asyncio is built-in)
 aiosqlite
-asyncio
 
-# Utils & Media
+# Utils & Media (hashlib is built-in)
 pillow
 python-dotenv
 wget
 lxml
-hashlib
 
-# Automation (If still used by your plugins)
+# Automation
 selenium
 webdriver_manager
