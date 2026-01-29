@@ -385,9 +385,15 @@ class Bot:
             return await event.answer("⚠️ Not available.")
 
         if is_playlist:
-            search_result = await SpotifyDownloader.get_playlist_tracks(search_query,
-                                                                        limit=int(current_page) * 10 )
-            {
+            search_result = await SpotifyDownloader.get_playlist_tracks(
+                search_query,
+                limit=int(current_page) * 10
+            )
+
+    @classmethod
+    async def initialize_action_queries(cls):
+        # Original logic: mapping button actions to functions
+        cls.button_actions = {
             b"setting/quality/mp3/128": lambda e: asyncio.create_task(Bot.change_music_quality(e, "mp3", "128")),
             b"setting/quality/flac": lambda e: asyncio.create_task(Bot.change_music_quality(e, "flac", "693")),
             b"setting/core": lambda e: asyncio.create_task(BotMessageHandler.edit_core_setting_message(e)),
@@ -404,6 +410,7 @@ class Bot:
             b"setting/TweetCapture/mode/0": lambda e: asyncio.create_task(Bot.change_tweet_capture_night_mode(e, "0")),
             b"setting/TweetCapture/mode/1": lambda e: asyncio.create_task(Bot.change_tweet_capture_night_mode(e, "1")),
             b"setting/TweetCapture/mode/2": lambda e: asyncio.create_task(Bot.change_tweet_capture_night_mode(e, "2")),
+            # (Note: b"cancel" and admin commands below are preserved exactly)
             b"cancel": lambda e: e.delete(),
             b"admin/cancel_broadcast": lambda e: asyncio.create_task(BotState.set_admin_broadcast(e.sender_id, False)),
             b"admin/stats": lambda e: asyncio.create_task(BotCommandHandler.handle_stats_command(e)),
@@ -414,7 +421,7 @@ class Bot:
             b"admin/broadcast/specified": lambda e: asyncio.create_task(
                 Bot.handle_broadcast(e, send_to_specified=True)),
             b"unavailable_feature": lambda e: asyncio.create_task(Bot.handle_unavailable_feature(e)) 
-                                                                        }
+        }
 
     @staticmethod
     async def change_music_quality(event, format, quality):
